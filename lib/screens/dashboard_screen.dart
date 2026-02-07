@@ -124,6 +124,7 @@ class _ClaimCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text('Policy: ${claim.policyNumber}'),
               Text('Hospital: ${claim.hospitalName}'),
+              Text('Created: ${_formatDate(claim.createdAt)}'),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 12,
@@ -133,14 +134,16 @@ class _ClaimCard extends StatelessWidget {
                     label: 'Bills',
                     value: _formatMoney(claim.totalBills),
                   ),
-                  _MetricTile(
-                    label: 'Advances',
-                    value: _formatMoney(claim.totalAdvances),
-                  ),
-                  _MetricTile(
-                    label: 'Settled',
-                    value: _formatMoney(claim.totalSettlements),
-                  ),
+                  if (claim.status != ClaimStatus.rejected)
+                    _MetricTile(
+                      label: 'Advances',
+                      value: _formatMoney(claim.totalAdvances),
+                    ),
+                  if (claim.status != ClaimStatus.rejected)
+                    _MetricTile(
+                      label: 'Settled',
+                      value: _formatMoney(claim.totalSettlements),
+                    ),
                   if (claim.status == ClaimStatus.rejected)
                     _RejectedTile(
                       advances: _formatMoney(claim.totalAdvances),
@@ -160,7 +163,11 @@ class _ClaimCard extends StatelessWidget {
   }
 
   String _formatMoney(double value) {
-    return 'INR ${value.toStringAsFixed(2)}';
+    return '₹${value.toStringAsFixed(2)}';
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
 

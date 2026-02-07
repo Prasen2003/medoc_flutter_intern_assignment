@@ -81,8 +81,10 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
           if (isEditing)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              onPressed: _confirmDelete,
-              tooltip: 'Delete claim',
+              onPressed: _canDeleteClaim() ? _confirmDelete : null,
+              tooltip: _canDeleteClaim()
+                  ? 'Delete claim'
+                  : 'Deletion disabled for this status',
             ),
         ],
       ),
@@ -92,7 +94,10 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Patient Details', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Patient Details',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _patientController,
@@ -101,7 +106,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                 labelText: 'Patient name',
                 border: OutlineInputBorder(),
               ),
-              validator: _requiredValidator,
+              validator: _patientNameValidator,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -111,7 +116,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                 labelText: 'Policy number',
                 border: OutlineInputBorder(),
               ),
-              validator: _requiredValidator,
+              validator: _policyNumberValidator,
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -121,16 +126,18 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                 labelText: 'Hospital name',
                 border: OutlineInputBorder(),
               ),
-              validator: _requiredValidator,
+              validator: _hospitalNameValidator,
             ),
             const SizedBox(height: 16),
             _DateRow(
               admissionDate: _admissionDate,
               dischargeDate: _dischargeDate,
-              onPickAdmission:
-                  _isDraftEditable() ? () => _pickDate(context, true) : null,
-              onPickDischarge:
-                  _isDraftEditable() ? () => _pickDate(context, false) : null,
+              onPickAdmission: _isDraftEditable()
+                  ? () => _pickDate(context, true)
+                  : null,
+              onPickDischarge: _isDraftEditable()
+                  ? () => _pickDate(context, false)
+                  : null,
             ),
             const SizedBox(height: 16),
             _StatusRow(
@@ -152,6 +159,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
               canEdit: _isDraftEditable(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
+              onView: (item) => _showLineItemDetails(context, item),
             ),
             const SizedBox(height: 20),
             _SectionHeader(
@@ -167,6 +175,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
               canEdit: _canModifyAdvances(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
+              onView: (item) => _showLineItemDetails(context, item),
             ),
             const SizedBox(height: 20),
             _SectionHeader(
@@ -182,6 +191,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
               canEdit: _canModifySettlements(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
+              onView: (item) => _showLineItemDetails(context, item),
             ),
             const SizedBox(height: 20),
             _TotalsCard(totals: totals),
@@ -197,9 +207,83 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     );
   }
 
-  String? _requiredValidator(String? value) {
+  String? _patientNameValidator(String? value) {
     if (value == null || value.trim().isEmpty) {
       return 'Required field';
+    }
+    final trimmed = value.trim();
+    final validPattern = RegExp(r"^(?=.*[A-Za-z])[A-Za-z\s.'-]+$");
+    if (!validPattern.hasMatch(trimmed)) {
+      return 'Use letters, spaces, dot, apostrophe, or hyphen only.';
+    }
+    return null;
+  }
+
+  String? _lineItemLabelValidator(LineItemType type, String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Required field';
+    }
+    if (type == LineItemType.bill) {
+      final trimmed = value.trim();
+      final validPattern = RegExp(r'^(?=.*[A-Za-z]).+$');
+      if (!validPattern.hasMatch(trimmed)) {
+        return 'Bill label must include letters.';
+      }
+    }
+    return null;
+  }
+
+  Future<void> _showLineItemDetails(BuildContext context, LineItem item) {
+    final notes = item.notes.trim().isEmpty ? 'No notes' : item.notes.trim();
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(item.label),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Amount: ₹${item.amount.toStringAsFixed(2)}'),
+              Text('Date: ${_formatDate(item.date)}'),
+              const SizedBox(height: 8),
+              Text('Notes: $notes'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String? _hospitalNameValidator(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Required field';
+    }
+    final trimmed = value.trim();
+    final validPattern = RegExp(r"^(?=.*[A-Za-z])[A-Za-z0-9\s.-]+$");
+    if (!validPattern.hasMatch(trimmed)) {
+      return 'Use letters, numbers, spaces, dot, or hyphen.';
+    }
+    return null;
+  }
+
+  String? _policyNumberValidator(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Required field';
+    }
+    final trimmed = value.trim();
+    if (trimmed.length < 6) {
+      return 'Policy number must be at least 6 characters.';
+    }
+    final validPattern = RegExp(r'^[A-Za-z0-9-]+$');
+    if (!validPattern.hasMatch(trimmed)) {
+      return 'Use letters, numbers, or hyphen only.';
     }
     return null;
   }
@@ -210,7 +294,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
       context: context,
       initialDate: initial,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
+      lastDate: DateTime.now(),
     );
     if (picked == null) {
       return;
@@ -317,7 +401,9 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text('${existing == null ? 'Add' : 'Edit'} ${_typeLabel(type)}'),
+              title: Text(
+                '${existing == null ? 'Add' : 'Edit'} ${_typeLabel(type)}',
+              ),
               content: SizedBox(
                 width: 360,
                 child: Form(
@@ -331,7 +417,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                           labelText: 'Label',
                           border: OutlineInputBorder(),
                         ),
-                        validator: _requiredValidator,
+                        validator: (value) => _lineItemLabelValidator(type, value),
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -339,7 +425,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Amount',
-                          prefixText: 'INR ',
+                          prefixText: '₹',
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
@@ -366,9 +452,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              'Date: ${_formatDate(selectedDate)}',
-                            ),
+                            child: Text('Date: ${_formatDate(selectedDate)}'),
                           ),
                           TextButton(
                             onPressed: () async {
@@ -376,7 +460,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
                                 context: context,
                                 initialDate: selectedDate,
                                 firstDate: DateTime(2020),
-                                lastDate: DateTime(2035),
+                                lastDate: DateTime.now(),
                               );
                               if (picked != null) {
                                 setDialogState(() => selectedDate = picked);
@@ -448,7 +532,9 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
 
     if (_dischargeDate.isBefore(_admissionDate)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Discharge date must be after admission.')),
+        const SnackBar(
+          content: Text('Discharge date must be after admission.'),
+        ),
       );
       return;
     }
@@ -513,7 +599,9 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
       bills: List.of(_bills),
       advances: List.of(_advances),
       settlements: List.of(_settlements),
-      createdAt: widget.claimId == null ? now : repo.findById(widget.claimId!)?.createdAt ?? now,
+      createdAt: widget.claimId == null
+          ? now
+          : repo.findById(widget.claimId!)?.createdAt ?? now,
       updatedAt: now,
     );
 
@@ -531,6 +619,36 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   }
 
   Future<void> _confirmDelete() async {
+    if (!_canDeleteClaim()) {
+      return;
+    }
+    if (_status == ClaimStatus.submitted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Delete submitted claim?'),
+            content: const Text(
+              'This claim is submitted. Deleting it cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (!mounted || confirmed != true) {
+        return;
+      }
+    }
     final result = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -583,6 +701,10 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
+  bool _canDeleteClaim() {
+    return _status == ClaimStatus.draft || _status == ClaimStatus.submitted;
+  }
+
   bool _isDraftEditable() {
     return _status == ClaimStatus.draft || _status == ClaimStatus.submitted;
   }
@@ -590,14 +712,12 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   bool _canModifyAdvances() {
     return _status == ClaimStatus.submitted ||
         _status == ClaimStatus.approved ||
-        _status == ClaimStatus.partiallySettled ||
-        _status == ClaimStatus.fullySettled;
+        _status == ClaimStatus.partiallySettled;
   }
 
   bool _canModifySettlements() {
     return _status == ClaimStatus.approved ||
-        _status == ClaimStatus.partiallySettled ||
-        _status == ClaimStatus.fullySettled;
+        _status == ClaimStatus.partiallySettled;
   }
 
   bool _canAddLineItem(LineItemType type) {
@@ -817,10 +937,7 @@ class _StatusRow extends StatelessWidget {
         DropdownButton<ClaimStatus>(
           value: status,
           items: options.map((option) {
-            return DropdownMenuItem(
-              value: option,
-              child: Text(_label(option)),
-            );
+            return DropdownMenuItem(value: option, child: Text(_label(option)));
           }).toList(),
           onChanged: (value) {
             if (value != null) {
@@ -891,6 +1008,7 @@ class _LineItemList extends StatelessWidget {
     required this.canEdit,
     required this.onEdit,
     required this.onRemove,
+    required this.onView,
   });
 
   final List<LineItem> items;
@@ -898,6 +1016,7 @@ class _LineItemList extends StatelessWidget {
   final bool canEdit;
   final void Function(LineItemType, LineItem) onEdit;
   final void Function(LineItemType, LineItem) onRemove;
+  final void Function(LineItem) onView;
 
   @override
   Widget build(BuildContext context) {
@@ -917,8 +1036,9 @@ class _LineItemList extends StatelessWidget {
           child: ListTile(
             title: Text(item.label),
             subtitle: Text(
-              'INR ${item.amount.toStringAsFixed(2)} • ${_formatDate(item.date)}',
+              '₹${item.amount.toStringAsFixed(2)} • ${_formatDate(item.date)}',
             ),
+            onTap: () => onView(item),
             trailing: canEdit
                 ? Wrap(
                     spacing: 8,
@@ -933,7 +1053,7 @@ class _LineItemList extends StatelessWidget {
                       ),
                     ],
                   )
-                : null,
+                : const Icon(Icons.info_outline),
           ),
         );
       }).toList(),
@@ -974,7 +1094,10 @@ class _TotalsCard extends StatelessWidget {
             const SizedBox(height: 12),
             _TotalRow(label: 'Total Bills', value: totals.totalBills),
             _TotalRow(label: 'Total Advances', value: totals.totalAdvances),
-            _TotalRow(label: 'Total Settlements', value: totals.totalSettlements),
+            _TotalRow(
+              label: 'Total Settlements',
+              value: totals.totalSettlements,
+            ),
             const Divider(),
             _TotalRow(label: 'Pending Amount', value: totals.pendingAmount),
           ],
@@ -996,10 +1119,7 @@ class _TotalRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label),
-          Text('INR ${value.toStringAsFixed(2)}'),
-        ],
+        children: [Text(label), Text('₹${value.toStringAsFixed(2)}')],
       ),
     );
   }

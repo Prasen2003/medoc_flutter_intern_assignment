@@ -16,6 +16,26 @@ class LineItem {
   final DateTime date;
   final String notes;
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'label': label,
+      'amount': amount,
+      'date': date.toIso8601String(),
+      'notes': notes,
+    };
+  }
+
+  factory LineItem.fromJson(Map<String, dynamic> json) {
+    return LineItem(
+      id: json['id'] as String,
+      label: json['label'] as String,
+      amount: (json['amount'] as num).toDouble(),
+      date: DateTime.parse(json['date'] as String),
+      notes: (json['notes'] as String?) ?? '',
+    );
+  }
+
   LineItem copyWith({
     String? id,
     String? label,
