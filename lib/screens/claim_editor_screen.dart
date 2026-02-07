@@ -462,33 +462,44 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
       );
       return;
     }
-    final totals = _Totals.fromItems(_bills, _advances, _settlements);
-    if (status == ClaimStatus.fullySettled && totals.pendingAmount > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pending amount must be 0 to fully settle.'),
-        ),
-      );
-      return;
-    }
 
+    if (_requiresSaveConfirmation(status)) {
+      final confirmed = await _confirmStatusChange(status);
+      if (!mounted || confirmed != true) {
+        return;
+      }
+    }
+    final totals = _Totals.fromItems(_bills, _advances, _settlements);
     if (totals.pendingAmount == 0 &&
         (status == ClaimStatus.approved ||
             status == ClaimStatus.partiallySettled ||
             status == ClaimStatus.fullySettled)) {
       status = ClaimStatus.fullySettled;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Status set to Fully Settled.')),
       );
-    } else if (status == ClaimStatus.approved &&
-        totals.totalSettlements > 0 &&
-        totals.pendingAmount > 0) {
+    } else if (totals.totalSettlements > 0 &&
+        totals.pendingAmount > 0 &&
+        (status == ClaimStatus.approved ||
+            status == ClaimStatus.partiallySettled ||
+            status == ClaimStatus.fullySettled)) {
       status = ClaimStatus.partiallySettled;
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Status set to Partially Settled.')),
       );
+    } else if (totals.totalSettlements == 0 &&
+        (status == ClaimStatus.partiallySettled ||
+            status == ClaimStatus.fullySettled)) {
+      status = ClaimStatus.approved;
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status reverted to Approved.')),
+      );
     }
 
+    // ignore: use_build_context_synchronously
     final repo = context.read<ClaimRepository>();
     final now = DateTime.now();
     final claim = Claim(
@@ -515,6 +526,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     if (!mounted) {
       return;
     }
+    // ignore: use_build_context_synchronously
     Navigator.of(context).pop();
   }
 
@@ -572,18 +584,20 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   bool _isDraftEditable() {
-    return _originalStatus == ClaimStatus.draft;
+    return _status == ClaimStatus.draft || _status == ClaimStatus.submitted;
   }
 
   bool _canModifyAdvances() {
-    return _originalStatus == ClaimStatus.submitted ||
-        _originalStatus == ClaimStatus.approved ||
-        _originalStatus == ClaimStatus.partiallySettled;
+    return _status == ClaimStatus.submitted ||
+        _status == ClaimStatus.approved ||
+        _status == ClaimStatus.partiallySettled ||
+        _status == ClaimStatus.fullySettled;
   }
 
   bool _canModifySettlements() {
-    return _originalStatus == ClaimStatus.approved ||
-        _originalStatus == ClaimStatus.partiallySettled;
+    return _status == ClaimStatus.approved ||
+        _status == ClaimStatus.partiallySettled ||
+        _status == ClaimStatus.fullySettled;
   }
 
   bool _canAddLineItem(LineItemType type) {
@@ -687,36 +701,56 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     if (nextStatus == _status) {
       return;
     }
-    if (nextStatus == ClaimStatus.submitted ||
-        nextStatus == ClaimStatus.rejected) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text('Confirm status change'),
-            content: Text(
-              nextStatus == ClaimStatus.submitted
-                  ? 'Are you sure you want to submit this claim?'
-                  : 'Are you sure you want to reject this claim?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Confirm'),
-              ),
-            ],
-          );
-        },
-      );
-      if (!mounted || confirmed != true) {
-        return;
+    setState(() {
+      _status = nextStatus;
+      if (nextStatus == ClaimStatus.draft) {
+        _advances = [];
+        _settlements = [];
+      } else if (nextStatus == ClaimStatus.submitted ||
+          nextStatus == ClaimStatus.rejected) {
+        _settlements = [];
       }
+    });
+  }
+
+  bool _requiresSaveConfirmation(ClaimStatus status) {
+    if (status == _originalStatus) {
+      return false;
     }
-    setState(() => _status = nextStatus);
+    return status == ClaimStatus.submitted ||
+        status == ClaimStatus.approved ||
+        status == ClaimStatus.rejected;
+  }
+
+  Future<bool?> _confirmStatusChange(ClaimStatus status) {
+    final message = switch (status) {
+      ClaimStatus.submitted => 'Are you sure you want to submit this claim?',
+      ClaimStatus.approved => 'Are you sure you want to approve this claim?',
+      ClaimStatus.rejected => 'Are you sure you want to reject this claim?',
+      _ => null,
+    };
+    if (message == null) {
+      return Future.value(true);
+    }
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Confirm status change'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
 

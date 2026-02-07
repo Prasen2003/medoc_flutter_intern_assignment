@@ -141,10 +141,15 @@ class _ClaimCard extends StatelessWidget {
                     label: 'Settled',
                     value: _formatMoney(claim.totalSettlements),
                   ),
-                  _MetricTile(
-                    label: 'Pending',
-                    value: _formatMoney(claim.pendingAmount),
-                  ),
+                  if (claim.status == ClaimStatus.rejected)
+                    _RejectedTile(
+                      advances: _formatMoney(claim.totalAdvances),
+                    )
+                  else
+                    _MetricTile(
+                      label: 'Pending',
+                      value: _formatMoney(claim.pendingAmount),
+                    ),
                 ],
               ),
             ],
@@ -180,6 +185,32 @@ class _MetricTile extends StatelessWidget {
           Text(label, style: textTheme.labelMedium),
           const SizedBox(height: 4),
           Text(value, style: textTheme.titleSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _RejectedTile extends StatelessWidget {
+  const _RejectedTile({required this.advances});
+
+  final String advances;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Claim Rejected – No further settlement', style: textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Text('Advance Paid: $advances', style: textTheme.titleSmall),
         ],
       ),
     );
