@@ -16,6 +16,7 @@ class StatusChip extends StatelessWidget {
       ClaimStatus.approved => Colors.green.shade600,
       ClaimStatus.rejected => scheme.error,
       ClaimStatus.partiallySettled => Colors.orange.shade700,
+      ClaimStatus.fullySettled => Colors.teal.shade700,
     };
 
     return Chip(
@@ -38,6 +39,8 @@ class StatusChip extends StatelessWidget {
         return 'Rejected';
       case ClaimStatus.partiallySettled:
         return 'Partially Settled';
+      case ClaimStatus.fullySettled:
+        return 'Fully Settled';
     }
   }
 }

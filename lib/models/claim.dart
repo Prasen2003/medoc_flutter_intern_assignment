@@ -8,6 +8,7 @@ enum ClaimStatus {
   approved,
   rejected,
   partiallySettled,
+  fullySettled,
 }
 
 @immutable
@@ -90,10 +91,12 @@ bool canTransition(ClaimStatus from, ClaimStatus to) {
     case ClaimStatus.submitted:
       return to == ClaimStatus.approved || to == ClaimStatus.rejected;
     case ClaimStatus.approved:
-      return to == ClaimStatus.partiallySettled;
+      return to == ClaimStatus.partiallySettled || to == ClaimStatus.fullySettled;
     case ClaimStatus.rejected:
       return false;
     case ClaimStatus.partiallySettled:
+      return to == ClaimStatus.fullySettled;
+    case ClaimStatus.fullySettled:
       return false;
   }
 }

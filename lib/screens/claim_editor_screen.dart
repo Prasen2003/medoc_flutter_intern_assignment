@@ -25,6 +25,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   DateTime _admissionDate = DateTime.now();
   DateTime _dischargeDate = DateTime.now();
   ClaimStatus _status = ClaimStatus.draft;
+  ClaimStatus _originalStatus = ClaimStatus.draft;
 
   List<LineItem> _bills = [];
   List<LineItem> _advances = [];
@@ -54,6 +55,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     _admissionDate = claim.admissionDate;
     _dischargeDate = claim.dischargeDate;
     _status = claim.status;
+    _originalStatus = claim.status;
     _bills = List.of(claim.bills);
     _advances = List.of(claim.advances);
     _settlements = List.of(claim.settlements);
@@ -86,6 +88,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
       ),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -93,6 +96,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _patientController,
+              enabled: _isDraftEditable(),
               decoration: const InputDecoration(
                 labelText: 'Patient name',
                 border: OutlineInputBorder(),
@@ -102,6 +106,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _policyController,
+              enabled: _isDraftEditable(),
               decoration: const InputDecoration(
                 labelText: 'Policy number',
                 border: OutlineInputBorder(),
@@ -111,6 +116,7 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _hospitalController,
+              enabled: _isDraftEditable(),
               decoration: const InputDecoration(
                 labelText: 'Hospital name',
                 border: OutlineInputBorder(),
@@ -121,23 +127,29 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             _DateRow(
               admissionDate: _admissionDate,
               dischargeDate: _dischargeDate,
-              onPickAdmission: () => _pickDate(context, true),
-              onPickDischarge: () => _pickDate(context, false),
+              onPickAdmission:
+                  _isDraftEditable() ? () => _pickDate(context, true) : null,
+              onPickDischarge:
+                  _isDraftEditable() ? () => _pickDate(context, false) : null,
             ),
             const SizedBox(height: 16),
             _StatusRow(
               status: _status,
-              onChanged: (status) => setState(() => _status = status),
+              options: _statusOptions(),
+              onChanged: _handleStatusChange,
             ),
             const SizedBox(height: 24),
             _SectionHeader(
               title: 'Bills',
               subtitle: 'Medical expenses claimed by the hospital',
-              onAdd: () => _addLineItem(context, LineItemType.bill),
+              onAdd: _isDraftEditable()
+                  ? () => _addLineItem(context, LineItemType.bill)
+                  : null,
             ),
             _LineItemList(
               items: _bills,
               type: LineItemType.bill,
+              canEdit: _isDraftEditable(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
             ),
@@ -145,11 +157,14 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             _SectionHeader(
               title: 'Advances',
               subtitle: 'Advance payments given by the insurer',
-              onAdd: () => _addLineItem(context, LineItemType.advance),
+              onAdd: _canModifyAdvances()
+                  ? () => _addLineItem(context, LineItemType.advance)
+                  : null,
             ),
             _LineItemList(
               items: _advances,
               type: LineItemType.advance,
+              canEdit: _canModifyAdvances(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
             ),
@@ -157,11 +172,14 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
             _SectionHeader(
               title: 'Settlements',
               subtitle: 'Final settlement payments issued',
-              onAdd: () => _addLineItem(context, LineItemType.settlement),
+              onAdd: _canModifySettlements()
+                  ? () => _addLineItem(context, LineItemType.settlement)
+                  : null,
             ),
             _LineItemList(
               items: _settlements,
               type: LineItemType.settlement,
+              canEdit: _canModifySettlements(),
               onEdit: _editLineItem,
               onRemove: _removeLineItem,
             ),
@@ -197,6 +215,27 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     if (picked == null) {
       return;
     }
+    if (!mounted) {
+      return;
+    }
+    // ignore: use_build_context_synchronously
+    final messenger = ScaffoldMessenger.of(context);
+    if (isAdmission && picked.isAfter(_dischargeDate)) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Admission date cannot be after discharge date.'),
+        ),
+      );
+      return;
+    }
+    if (!isAdmission && picked.isBefore(_admissionDate)) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Discharge date cannot be before admission date.'),
+        ),
+      );
+      return;
+    }
     setState(() {
       if (isAdmission) {
         _admissionDate = picked;
@@ -207,8 +246,16 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   }
 
   Future<void> _addLineItem(BuildContext context, LineItemType type) async {
+    if (!_canAddLineItem(type)) {
+      _showNotAllowedMessage(type);
+      return;
+    }
     final item = await _showLineItemDialog(context, type);
     if (item == null) {
+      return;
+    }
+    if (!_canApplyLineItem(type, item)) {
+      _showExceedsBillsMessage();
       return;
     }
     setState(() {
@@ -219,6 +266,10 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   Future<void> _editLineItem(LineItemType type, LineItem item) async {
     final updated = await _showLineItemDialog(context, type, existing: item);
     if (updated == null) {
+      return;
+    }
+    if (!_canApplyLineItem(type, updated, editingId: item.id)) {
+      _showExceedsBillsMessage();
       return;
     }
     setState(() {
@@ -374,6 +425,27 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
       return;
     }
 
+    if (_patientController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Patient name is required.')),
+      );
+      return;
+    }
+
+    if ((_originalStatus == ClaimStatus.draft ||
+            _originalStatus == ClaimStatus.submitted) &&
+        _bills.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one bill before saving.')),
+      );
+      return;
+    }
+
+    if (!_areTotalsValid()) {
+      _showExceedsBillsMessage();
+      return;
+    }
+
     if (_dischargeDate.isBefore(_admissionDate)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Discharge date must be after admission.')),
@@ -382,8 +454,33 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     }
 
     var status = _status;
+    if (!canTransition(_originalStatus, status)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invalid status transition. Please save in order.'),
+        ),
+      );
+      return;
+    }
     final totals = _Totals.fromItems(_bills, _advances, _settlements);
-    if (status == ClaimStatus.approved &&
+    if (status == ClaimStatus.fullySettled && totals.pendingAmount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pending amount must be 0 to fully settle.'),
+        ),
+      );
+      return;
+    }
+
+    if (totals.pendingAmount == 0 &&
+        (status == ClaimStatus.approved ||
+            status == ClaimStatus.partiallySettled ||
+            status == ClaimStatus.fullySettled)) {
+      status = ClaimStatus.fullySettled;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Status set to Fully Settled.')),
+      );
+    } else if (status == ClaimStatus.approved &&
         totals.totalSettlements > 0 &&
         totals.pendingAmount > 0) {
       status = ClaimStatus.partiallySettled;
@@ -473,6 +570,154 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   }
 
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+  bool _isDraftEditable() {
+    return _originalStatus == ClaimStatus.draft;
+  }
+
+  bool _canModifyAdvances() {
+    return _originalStatus == ClaimStatus.submitted ||
+        _originalStatus == ClaimStatus.approved ||
+        _originalStatus == ClaimStatus.partiallySettled;
+  }
+
+  bool _canModifySettlements() {
+    return _originalStatus == ClaimStatus.approved ||
+        _originalStatus == ClaimStatus.partiallySettled;
+  }
+
+  bool _canAddLineItem(LineItemType type) {
+    if (type == LineItemType.bill) {
+      return _isDraftEditable();
+    }
+    if (type == LineItemType.advance) {
+      return _canModifyAdvances();
+    }
+    return _canModifySettlements();
+  }
+
+  bool _canApplyLineItem(
+    LineItemType type,
+    LineItem item, {
+    String? editingId,
+  }) {
+    if (type == LineItemType.bill) {
+      return true;
+    }
+    final billsTotal = _sumAmounts(_bills);
+    double advancesTotal = _sumAmounts(_advances);
+    double settlementsTotal = _sumAmounts(_settlements);
+
+    if (type == LineItemType.advance) {
+      advancesTotal = _recalculateTotal(_advances, item, editingId);
+    } else {
+      settlementsTotal = _recalculateTotal(_settlements, item, editingId);
+    }
+
+    return (advancesTotal + settlementsTotal) <= billsTotal;
+  }
+
+  bool _areTotalsValid() {
+    final billsTotal = _sumAmounts(_bills);
+    final advancesTotal = _sumAmounts(_advances);
+    final settlementsTotal = _sumAmounts(_settlements);
+    return (advancesTotal + settlementsTotal) <= billsTotal;
+  }
+
+  double _sumAmounts(List<LineItem> items) {
+    return items.fold<double>(0, (total, item) => total + item.amount);
+  }
+
+  double _recalculateTotal(
+    List<LineItem> items,
+    LineItem updated,
+    String? editingId,
+  ) {
+    return items.fold<double>(0, (total, item) {
+      if (editingId != null && item.id == editingId) {
+        return total + updated.amount;
+      }
+      return total + item.amount;
+    });
+  }
+
+  void _showNotAllowedMessage(LineItemType type) {
+    final label = _typeLabel(type).toLowerCase();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          type == LineItemType.settlement
+              ? 'Settlements are available after approval.'
+              : 'Cannot add $label in draft status.',
+        ),
+      ),
+    );
+  }
+
+  void _showExceedsBillsMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Advances + settlements cannot exceed total bills.'),
+      ),
+    );
+  }
+
+  List<ClaimStatus> _statusOptions() {
+    switch (_originalStatus) {
+      case ClaimStatus.draft:
+        return const [ClaimStatus.draft, ClaimStatus.submitted];
+      case ClaimStatus.submitted:
+        return const [
+          ClaimStatus.submitted,
+          ClaimStatus.approved,
+          ClaimStatus.rejected,
+        ];
+      case ClaimStatus.approved:
+        return const [ClaimStatus.approved];
+      case ClaimStatus.rejected:
+        return const [ClaimStatus.rejected];
+      case ClaimStatus.partiallySettled:
+        return const [ClaimStatus.partiallySettled];
+      case ClaimStatus.fullySettled:
+        return const [ClaimStatus.fullySettled];
+    }
+  }
+
+  Future<void> _handleStatusChange(ClaimStatus nextStatus) async {
+    if (nextStatus == _status) {
+      return;
+    }
+    if (nextStatus == ClaimStatus.submitted ||
+        nextStatus == ClaimStatus.rejected) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Confirm status change'),
+            content: Text(
+              nextStatus == ClaimStatus.submitted
+                  ? 'Are you sure you want to submit this claim?'
+                  : 'Are you sure you want to reject this claim?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Confirm'),
+              ),
+            ],
+          );
+        },
+      );
+      if (!mounted || confirmed != true) {
+        return;
+      }
+    }
+    setState(() => _status = nextStatus);
+  }
 }
 
 class _DateRow extends StatelessWidget {
@@ -485,8 +730,8 @@ class _DateRow extends StatelessWidget {
 
   final DateTime admissionDate;
   final DateTime dischargeDate;
-  final VoidCallback onPickAdmission;
-  final VoidCallback onPickDischarge;
+  final VoidCallback? onPickAdmission;
+  final VoidCallback? onPickDischarge;
 
   @override
   Widget build(BuildContext context) {
@@ -517,14 +762,18 @@ class _DateRow extends StatelessWidget {
 }
 
 class _StatusRow extends StatelessWidget {
-  const _StatusRow({required this.status, required this.onChanged});
+  const _StatusRow({
+    required this.status,
+    required this.options,
+    required this.onChanged,
+  });
 
   final ClaimStatus status;
+  final List<ClaimStatus> options;
   final ValueChanged<ClaimStatus> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final options = allowedTransitions(status);
     return Row(
       children: [
         const Text('Status:'),
@@ -561,6 +810,8 @@ class _StatusRow extends StatelessWidget {
         return 'Rejected';
       case ClaimStatus.partiallySettled:
         return 'Partially Settled';
+      case ClaimStatus.fullySettled:
+        return 'Fully Settled';
     }
   }
 }
@@ -574,7 +825,7 @@ class _SectionHeader extends StatelessWidget {
 
   final String title;
   final String subtitle;
-  final VoidCallback onAdd;
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -603,12 +854,14 @@ class _LineItemList extends StatelessWidget {
   const _LineItemList({
     required this.items,
     required this.type,
+    required this.canEdit,
     required this.onEdit,
     required this.onRemove,
   });
 
   final List<LineItem> items;
   final LineItemType type;
+  final bool canEdit;
   final void Function(LineItemType, LineItem) onEdit;
   final void Function(LineItemType, LineItem) onRemove;
 
@@ -632,19 +885,21 @@ class _LineItemList extends StatelessWidget {
             subtitle: Text(
               'INR ${item.amount.toStringAsFixed(2)} • ${_formatDate(item.date)}',
             ),
-            trailing: Wrap(
-              spacing: 8,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: () => onEdit(type, item),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => onRemove(type, item),
-                ),
-              ],
-            ),
+            trailing: canEdit
+                ? Wrap(
+                    spacing: 8,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => onEdit(type, item),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => onRemove(type, item),
+                      ),
+                    ],
+                  )
+                : null,
           ),
         );
       }).toList(),
