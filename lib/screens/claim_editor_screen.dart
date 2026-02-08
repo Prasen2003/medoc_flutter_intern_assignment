@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/claim_repository.dart';
+import '../domain/claim_rules.dart';
 import '../models/claim.dart';
 import '../models/line_item.dart';
 import '../widgets/status_chip.dart';
@@ -510,18 +511,12 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     }
 
     if (_patientController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Patient name is required.')),
-      );
+      _showSnack('Patient name is required.');
       return;
     }
 
-    if ((_originalStatus == ClaimStatus.draft ||
-            _originalStatus == ClaimStatus.submitted) &&
-        _bills.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one bill before saving.')),
-      );
+    if (!ClaimRules.hasBillsForStatus(_originalStatus, _bills.length)) {
+      _showSnack('Add at least one bill before saving.');
       return;
     }
 
@@ -531,21 +526,13 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     }
 
     if (_dischargeDate.isBefore(_admissionDate)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Discharge date must be after admission.'),
-        ),
-      );
+      _showSnack('Discharge date must be after admission.');
       return;
     }
 
     var status = _status;
     if (!canTransition(_originalStatus, status)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid status transition. Please save in order.'),
-        ),
-      );
+      _showSnack('Invalid status transition. Please save in order.');
       return;
     }
 
@@ -555,34 +542,15 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
         return;
       }
     }
-    final totals = _Totals.fromItems(_bills, _advances, _settlements);
-    if (totals.pendingAmount == 0 &&
-        (status == ClaimStatus.approved ||
-            status == ClaimStatus.partiallySettled ||
-            status == ClaimStatus.fullySettled)) {
-      status = ClaimStatus.fullySettled;
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Status set to Fully Settled.')),
-      );
-    } else if (totals.totalSettlements > 0 &&
-        totals.pendingAmount > 0 &&
-        (status == ClaimStatus.approved ||
-            status == ClaimStatus.partiallySettled ||
-            status == ClaimStatus.fullySettled)) {
-      status = ClaimStatus.partiallySettled;
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Status set to Partially Settled.')),
-      );
-    } else if (totals.totalSettlements == 0 &&
-        (status == ClaimStatus.partiallySettled ||
-            status == ClaimStatus.fullySettled)) {
-      status = ClaimStatus.approved;
-      // ignore: use_build_context_synchronously
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Status reverted to Approved.')),
-      );
+    final totals = Totals(
+      totalBills: _sumAmounts(_bills),
+      totalAdvances: _sumAmounts(_advances),
+      totalSettlements: _sumAmounts(_settlements),
+    );
+    final resolution = ClaimRules.resolveStatusAfterSettlements(status, totals);
+    status = resolution.status;
+    if (resolution.message != null) {
+      _showSnack(resolution.message!);
     }
 
     // ignore: use_build_context_synchronously
@@ -702,32 +670,23 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
   String _newId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   bool _canDeleteClaim() {
-    return _status == ClaimStatus.draft || _status == ClaimStatus.submitted;
+    return ClaimRules.canDelete(_status);
   }
 
   bool _isDraftEditable() {
-    return _status == ClaimStatus.draft || _status == ClaimStatus.submitted;
+    return ClaimRules.isDraftEditable(_status);
   }
 
   bool _canModifyAdvances() {
-    return _status == ClaimStatus.submitted ||
-        _status == ClaimStatus.approved ||
-        _status == ClaimStatus.partiallySettled;
+    return ClaimRules.canModifyAdvances(_status);
   }
 
   bool _canModifySettlements() {
-    return _status == ClaimStatus.approved ||
-        _status == ClaimStatus.partiallySettled;
+    return ClaimRules.canModifySettlements(_status);
   }
 
   bool _canAddLineItem(LineItemType type) {
-    if (type == LineItemType.bill) {
-      return _isDraftEditable();
-    }
-    if (type == LineItemType.advance) {
-      return _canModifyAdvances();
-    }
-    return _canModifySettlements();
+    return ClaimRules.canAddLineItem(type, _status);
   }
 
   bool _canApplyLineItem(
@@ -755,7 +714,11 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
     final billsTotal = _sumAmounts(_bills);
     final advancesTotal = _sumAmounts(_advances);
     final settlementsTotal = _sumAmounts(_settlements);
-    return (advancesTotal + settlementsTotal) <= billsTotal;
+    return ClaimRules.totalsValid(
+      bills: billsTotal,
+      advances: advancesTotal,
+      settlements: settlementsTotal,
+    );
   }
 
   double _sumAmounts(List<LineItem> items) {
@@ -777,24 +740,24 @@ class _ClaimEditorScreenState extends State<ClaimEditorScreen> {
 
   void _showNotAllowedMessage(LineItemType type) {
     final label = _typeLabel(type).toLowerCase();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          type == LineItemType.settlement
-              ? 'Settlements are available after approval.'
-              : 'Cannot add $label in draft status.',
-        ),
-      ),
+    _showSnack(
+      type == LineItemType.settlement
+          ? 'Settlements are available after approval.'
+          : 'Cannot add $label in draft status.',
     );
   }
 
   void _showExceedsBillsMessage() {
+    _showSnack('Advances + settlements cannot exceed total bills.');
+  }
+
+  void _showSnack(String message) {
+    // ignore: use_build_context_synchronously
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Advances + settlements cannot exceed total bills.'),
-      ),
+      SnackBar(content: Text(message)),
     );
   }
+
 
   List<ClaimStatus> _statusOptions() {
     switch (_originalStatus) {

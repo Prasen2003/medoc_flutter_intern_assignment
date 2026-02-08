@@ -163,5 +163,3 @@ class ClaimRepository extends ChangeNotifier {
     await prefs.setString(_storageKey, encoded);
   }
 }
-
-enum LineItemType { bill, advance, settlement }

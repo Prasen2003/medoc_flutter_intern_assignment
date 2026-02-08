@@ -52,3 +52,5 @@ class LineItem {
     );
   }
 }
+
+enum LineItemType { bill, advance, settlement }
