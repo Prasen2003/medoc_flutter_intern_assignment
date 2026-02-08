@@ -1,16 +1,14 @@
-# medoc_claims
+# medoc_flutter_intern_assignment
+submitted by Prasen Bagul (prbagul999@gmail.com)
 
-A new Flutter project.
+Please use the URL below, to access the live web app.
 
-## Getting Started
+https://medoc-flutter-intern-2026.web.app/
 
-This project is a starting point for a Flutter application.
+Insurance Claim Management System (Flutter Web)
 
-A few resources to get you started if this is your first Flutter project:
+A Flutter web application for managing hospital insurance claims with a complete workflow from claim creation to final settlement. The system supports bills, advances, and settlements, with automatic financial calculations and status changes across Draft, Submitted, Approved, Rejected, Partially Settled, and Fully Settled.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Built with a focus on usability and accurate business rules, the app includes a dashboard view, editable claim records, validations, and controlled workflow transitions. Settlement-related statuses are automatically derived from totals and pending amount. Data persists locally in the browser.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+This project demonstrates end‑to‑end claim lifecycle handling, financial tracking, and state‑driven UI using Flutter Web.
