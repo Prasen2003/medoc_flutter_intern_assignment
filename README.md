@@ -2,8 +2,10 @@
 submitted by Prasen Bagul (prbagul999@gmail.com)
 
 Please use the URL below, to access the live web app.
-
 https://medoc-flutter-intern-2026.web.app/
+
+For a quick video walkthrough click the link below -
+https://www.youtube.com/watch?v=oRMWCeeqaw0
 
 Insurance Claim Management System (Flutter Web)
 
